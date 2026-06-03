@@ -314,7 +314,7 @@ def _artist_style_delta_conditioning(base_conditioning, styled_conditioning, sty
     return output
 
 
-class BulmaSeedRandom0100:
+class CKSSeedRandom0100:
     @classmethod
     def INPUT_TYPES(cls):
         return {
@@ -342,7 +342,7 @@ class BulmaSeedRandom0100:
         return (value, float(value))
 
 
-class BulmaArtistPromptWeightedBlend:
+class CKSArtistPromptWeightedBlend:
     @classmethod
     def INPUT_TYPES(cls):
         required = {
@@ -402,7 +402,7 @@ class BulmaArtistPromptWeightedBlend:
         return (conditioning, summary, composite_prompt)
 
 
-class BulmaArtistStyleDeltaBlend:
+class CKSArtistStyleDeltaBlend:
     @classmethod
     def INPUT_TYPES(cls):
         required = {
@@ -481,7 +481,7 @@ class BulmaArtistStyleDeltaBlend:
         return (conditioning, summary, composite_prompt)
 
 
-class BulmaImageSaveWithWorkflowName:
+class CKSImageSaveWithWorkflowName:
     def __init__(self):
         self.output_dir = folder_paths.get_output_directory()
 
@@ -673,17 +673,17 @@ class BulmaImageSaveWithWorkflowName:
 
 
 NODE_CLASS_MAPPINGS = {
-    "BulmaSeedRandom0100": BulmaSeedRandom0100,
-    "BulmaArtistPromptWeightedBlend": BulmaArtistPromptWeightedBlend,
-    "BulmaArtistStyleDeltaBlend": BulmaArtistStyleDeltaBlend,
-    "BulmaImageSaveWithWorkflowName": BulmaImageSaveWithWorkflowName,
+    "CKSSeedRandom0100": CKSSeedRandom0100,
+    "CKSArtistPromptWeightedBlend": CKSArtistPromptWeightedBlend,
+    "CKSArtistStyleDeltaBlend": CKSArtistStyleDeltaBlend,
+    "CKSImageSaveWithWorkflowName": CKSImageSaveWithWorkflowName,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "BulmaSeedRandom0100": "Seed Random 0-100",
-    "BulmaArtistPromptWeightedBlend": "Artist Prompt Weighted Blend",
-    "BulmaArtistStyleDeltaBlend": "Artist Style Delta Blend",
-    "BulmaImageSaveWithWorkflowName": "Save Image w/Workflow Name",
+    "CKSSeedRandom0100": "Seed Random 0-100",
+    "CKSArtistPromptWeightedBlend": "Artist Prompt Weighted Blend",
+    "CKSArtistStyleDeltaBlend": "Artist Style Delta Blend",
+    "CKSImageSaveWithWorkflowName": "Save Image w/Workflow Name",
 }
 
 WEB_DIRECTORY = "js"
