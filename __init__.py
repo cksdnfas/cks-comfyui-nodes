@@ -4,8 +4,10 @@ import math
 import os
 import random
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import folder_paths
 import numpy as np
@@ -21,6 +23,8 @@ MAX_SEED = 0xFFFFFFFFFFFFFFFF
 WEIGHTED_TAG_RE = re.compile(r"^\(\s*(?P<tag>.*?)\s*:\s*(?P<weight>[+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*\)$")
 PROMPT_CATEGORY = "CKS ComfyUI Nodes/Prompt"
 IMAGE_CATEGORY = "CKS ComfyUI Nodes/Image"
+ARTIFACT_CATEGORY = "CKS ComfyUI Nodes/Artifacts"
+SAFE_ARTIFACT_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1F]')
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,84 @@ def _string_socket(tooltip=None):
     if tooltip:
         data["tooltip"] = tooltip
     return ("STRING", data)
+
+
+def _safe_artifact_file_name(value, fallback="artifact.bin"):
+    name = SAFE_ARTIFACT_NAME_RE.sub("_", os.path.basename(str(value or "").strip()))
+    return name or fallback
+
+
+def _safe_artifact_subfolder(value):
+    normalized = str(value or "").strip().replace("\\", "/").strip("/")
+    parts = []
+    for part in normalized.split("/"):
+        if not part or part in {".", ".."}:
+            continue
+        parts.append(SAFE_ARTIFACT_NAME_RE.sub("_", part))
+    return "/".join(parts)
+
+
+def _available_artifact_path(directory, file_name, overwrite):
+    target = directory / file_name
+    if overwrite or not target.exists():
+        return target
+
+    stem = target.stem
+    suffix = target.suffix
+    counter = 2
+    while True:
+        candidate = directory / f"{stem}-{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def _available_artifact_directory(target, overwrite):
+    if overwrite:
+        if target.is_dir():
+            shutil.rmtree(target)
+        elif target.exists():
+            target.unlink()
+        return target
+
+    if not target.exists():
+        return target
+
+    counter = 2
+    while True:
+        candidate = target.parent / f"{target.name}-{counter}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def _iter_artifact_files(root):
+    for child in sorted(root.iterdir(), key=lambda path: path.name.lower()):
+        if child.is_dir():
+            yield from _iter_artifact_files(child)
+        elif child.is_file():
+            yield child
+
+
+def _is_within_directory(root, candidate):
+    return os.path.commonpath([str(root), str(candidate)]) == str(root)
+
+
+def _artifact_timestamp_prefix():
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]
+
+
+def _history_file_entries(output_root, root):
+    entries = []
+    for file_path in _iter_artifact_files(root):
+        entries.append(
+            {
+                "filename": file_path.name,
+                "subfolder": file_path.parent.relative_to(output_root).as_posix(),
+                "type": "output",
+            }
+        )
+    return entries
 
 
 def _parse_model_name(model_name):
@@ -672,11 +754,90 @@ class CKSImageSaveWithWorkflowName:
         return paths
 
 
+class CoNAIArtifactFileOutput:
+    """Copy a file or its parent folder into ComfyUI output for CoNAI artifact collection."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "file_path": ("STRING", {"default": "", "multiline": False, "forceInput": True}),
+                "subfolder": ("STRING", {"default": "conai_artifacts", "multiline": False}),
+                "filename_override": ("STRING", {"default": "", "multiline": False}),
+                "copy_parent_folder": ("BOOLEAN", {"default": True}),
+                "overwrite": ("BOOLEAN", {"default": False}),
+            }
+        }
+
+    RETURN_TYPES = ()
+    FUNCTION = "copy_file"
+    OUTPUT_NODE = True
+    CATEGORY = ARTIFACT_CATEGORY
+    DESCRIPTION = "Copies a file or parent folder into ComfyUI output so CoNAI can collect it as an artifact."
+
+    def copy_file(
+        self,
+        file_path,
+        subfolder="conai_artifacts",
+        filename_override="",
+        copy_parent_folder=True,
+        overwrite=False,
+    ):
+        raw_path = str(file_path or "").strip().strip('"')
+        if not raw_path:
+            raise ValueError("CoNAI Artifact File Output requires file_path.")
+
+        source_path = Path(raw_path).expanduser().resolve()
+        if not source_path.exists() or not source_path.is_file():
+            raise FileNotFoundError(f"Artifact source file not found: {source_path}")
+
+        output_root = Path(folder_paths.get_output_directory()).resolve()
+        safe_subfolder = _safe_artifact_subfolder(subfolder or "conai_artifacts")
+        target_parent = (output_root / safe_subfolder).resolve()
+        if not _is_within_directory(output_root, target_parent):
+            raise ValueError("Artifact subfolder escapes ComfyUI output directory.")
+        target_parent.mkdir(parents=True, exist_ok=True)
+
+        if copy_parent_folder:
+            source_root = source_path.parent
+            base_name = _safe_artifact_file_name(
+                str(filename_override).strip() if filename_override else source_root.name,
+                source_root.name,
+            )
+            target_name = f"{_artifact_timestamp_prefix()}_{base_name}"
+            target_root = _available_artifact_directory((target_parent / target_name).resolve(), bool(overwrite))
+            if not _is_within_directory(output_root, target_root):
+                raise ValueError("Artifact target escapes ComfyUI output directory.")
+            shutil.copytree(str(source_root), str(target_root))
+            return {"ui": {"files": _history_file_entries(output_root, target_root)}}
+
+        target_name = _safe_artifact_file_name(
+            str(filename_override).strip() if filename_override else source_path.name,
+            source_path.name,
+        )
+        target_path = _available_artifact_path(target_parent, target_name, bool(overwrite)).resolve()
+        if not _is_within_directory(output_root, target_path):
+            raise ValueError("Artifact target escapes ComfyUI output directory.")
+        shutil.copy2(str(source_path), str(target_path))
+        return {
+            "ui": {
+                "files": [
+                    {
+                        "filename": target_path.name,
+                        "subfolder": target_path.parent.relative_to(output_root).as_posix(),
+                        "type": "output",
+                    }
+                ]
+            }
+        }
+
+
 NODE_CLASS_MAPPINGS = {
     "CKSSeedRandom0100": CKSSeedRandom0100,
     "CKSArtistPromptWeightedBlend": CKSArtistPromptWeightedBlend,
     "CKSArtistStyleDeltaBlend": CKSArtistStyleDeltaBlend,
     "CKSImageSaveWithWorkflowName": CKSImageSaveWithWorkflowName,
+    "CoNAIArtifactFileOutput": CoNAIArtifactFileOutput,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -684,6 +845,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "CKSArtistPromptWeightedBlend": "Artist Prompt Weighted Blend",
     "CKSArtistStyleDeltaBlend": "Artist Style Delta Blend",
     "CKSImageSaveWithWorkflowName": "Save Image w/Workflow Name",
+    "CoNAIArtifactFileOutput": "CoNAI Artifact File Output",
 }
 
 WEB_DIRECTORY = "js"

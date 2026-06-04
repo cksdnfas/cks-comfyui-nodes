@@ -1,6 +1,6 @@
 # CKS ComfyUI Nodes
 
-Custom ComfyUI nodes for deterministic prompt utilities, artist-style prompt blending, and workflow-aware image saving.
+Custom ComfyUI nodes for deterministic prompt utilities, artist-style prompt blending, workflow-aware image saving, and CoNAI artifact output.
 
 Nodes are grouped in ComfyUI under `CKS ComfyUI Nodes`.
 
@@ -125,6 +125,25 @@ Metadata written:
 - ComfyUI hidden `prompt` and `extra_pnginfo` metadata for PNG output
 
 The node uses ComfyUI's safe output path handling and counter-based filenames to avoid saving outside the output directory or overwriting files with the same prefix.
+
+### CoNAI Artifact File Output
+
+Copies a generated file or its parent folder into ComfyUI output so CoNAI can collect it from workflow history.
+
+Inputs:
+
+- `file_path`
+- `subfolder`
+- `filename_override`
+- `copy_parent_folder`
+- `overwrite`
+
+Behavior:
+
+- Copies into the ComfyUI output directory, defaulting to `conai_artifacts`.
+- Returns copied files as ComfyUI history file entries.
+- Keeps the internal class key `CoNAIArtifactFileOutput` for existing workflow compatibility.
+- Blocks target paths that escape the ComfyUI output directory.
 
 ## Requirements
 
